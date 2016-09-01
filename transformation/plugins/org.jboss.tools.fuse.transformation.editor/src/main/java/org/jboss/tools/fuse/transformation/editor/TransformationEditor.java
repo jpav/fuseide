@@ -547,21 +547,16 @@ public class TransformationEditor extends EditorPart implements ISaveablePart2, 
             plugin.setExtensions(true);
             build.addPlugin(plugin);
         }
-        if (!(plugin.getConfiguration() instanceof Xpp3Dom)) throw new Exception(Messages.TransformationEditor_invalidPomConfiguration);
-        Xpp3Dom config = (Xpp3Dom)plugin.getConfiguration();
-        if (config == null) {
-            config = Xpp3DomBuilder.build(new ByteArrayInputStream(("<configuration>" + //$NON-NLS-1$
-                                                                    "    <excludeDependencies>false</excludeDependencies>" + //$NON-NLS-1$
-                                                                    "    <archive>" + //$NON-NLS-1$
-                                                                    "        <manifestEntries>" + //$NON-NLS-1$
-                                                                    "            <Project-Group-Id>${project.groupId}</Project-Group-Id>" + //$NON-NLS-1$
-                                                                    "            <Project-Artifact-Id>${project.artifactId}</Project-Artifact-Id>" + //$NON-NLS-1$
-                                                                    "            <Project-Version>${project.version}</Project-Version>" + //$NON-NLS-1$
-                                                                    "        </manifestEntries>" + //$NON-NLS-1$
-                                                                    "    </archive>" + //$NON-NLS-1$
-                                                                    "</configuration>").getBytes()), //$NON-NLS-1$
-                                          StandardCharsets.UTF_8.name());
-            plugin.setConfiguration(config);
+        Object pluginConf = plugin.getConfiguration();
+        Xpp3Dom config = null;
+        if (pluginConf == null || !(pluginConf instanceof Xpp3Dom)) {
+        	config = Xpp3DomBuilder.build(new ByteArrayInputStream(("<configuration>" + //$NON-NLS-1$
+                    "    <excludeDependencies>false</excludeDependencies>" + //$NON-NLS-1$
+                    "</configuration>").getBytes()), //$NON-NLS-1$
+        			StandardCharsets.UTF_8.name());
+        	plugin.setConfiguration(config);
+        } else {
+        	config = (Xpp3Dom)plugin.getConfiguration();
         }
         Xpp3Dom instructions = config.getChild("instructions"); //$NON-NLS-1$
         if (instructions == null) {
@@ -578,13 +573,17 @@ public class TransformationEditor extends EditorPart implements ISaveablePart2, 
             instructions.addChild(importPkg);
         }
         String importPkgs = importPkg.getValue().trim();
+        if (!importPkgs.contains("*")) { //$NON-NLS-1$
+        	if (!importPkgs.isEmpty()) importPkgs += ",\n"; //$NON-NLS-1$
+            importPkgs += "*"; //$NON-NLS-1$
+        }
         if (!importPkgs.contains("com.sun.el;version=")) { //$NON-NLS-1$
             if (!importPkgs.isEmpty()) importPkgs += ",\n"; //$NON-NLS-1$
-            importPkgs += "*,com.sun.el;version=\"[2,3)\";resolution:=optional"; //$NON-NLS-1$
-            importPkg.setValue(importPkgs);
-            try (OutputStream out = new BufferedOutputStream(new FileOutputStream(pomFile))) {
-                MavenPlugin.getMaven().writeModel(pomModel, out);
-            }
+            importPkgs += "com.sun.el;version=\"[2,3)\";resolution:=optional"; //$NON-NLS-1$
+        }
+        importPkg.setValue(importPkgs);
+        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(pomFile))) {
+            MavenPlugin.getMaven().writeModel(pomModel, out);
         }
     }
 }
