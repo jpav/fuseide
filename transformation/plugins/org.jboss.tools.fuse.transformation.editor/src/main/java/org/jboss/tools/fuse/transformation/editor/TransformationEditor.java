@@ -377,10 +377,11 @@ public class TransformationEditor extends EditorPart implements ISaveablePart2, 
 			mavenUtils.addResourceFolder(project, pomFile, Util.TRANSFORMATIONS_FOLDER);
 			mavenUtils.addResourceFolder(project, pomFile, MavenUtils.RESOURCES_PATH);
 
+			IProgressMonitor monitor = new NullProgressMonitor();
+			
 			// Ensure import of package com.sun.el (FUSETOOLS-2039)
-			updateManifestPackageImports(project, pomFile);
+			updateManifestPackageImports(project, pomFile, monitor);
 
-            IProgressMonitor monitor = new NullProgressMonitor();
 
             // Ensure Java project source classpath entry exists for main Java source & transformations folder
             Util.ensureSourceFolderExists(javaProject, Util.TRANSFORMATIONS_FOLDER, monitor);
@@ -530,13 +531,14 @@ public class TransformationEditor extends EditorPart implements ISaveablePart2, 
         helpText.getParent().layout();
     }
 
-    public void updateManifestPackageImports(IProject project,
-                                             File pomFile) throws Exception {
+    public void updateManifestPackageImports(IProject project, File pomFile, IProgressMonitor monitor) throws Exception {
         IPath pomPath = project.getRawLocation() != null
                         ? project.getRawLocation()
                         : ResourcesPlugin.getWorkspace().getRoot().getLocation().append(project.getFullPath());
         Model pomModel = MavenPlugin.getMaven().readModel(new File(pomPath.append("pom.xml").toOSString()));  //$NON-NLS-1$
-        if ("war".equals(pomModel.getPackaging())) return; //$NON-NLS-1$
+        if ("war".equals(pomModel.getPackaging())){ //$NON-NLS-1$
+        	return; 
+        }
         Build build = pomModel.getBuild();
         Map<String, Plugin> pluginsByName = build.getPluginsAsMap();
         Plugin plugin = pluginsByName.get("org.apache.felix:maven-bundle-plugin"); //$NON-NLS-1$
@@ -562,6 +564,8 @@ public class TransformationEditor extends EditorPart implements ISaveablePart2, 
                                                                     "</configuration>").getBytes()), //$NON-NLS-1$
                                           StandardCharsets.UTF_8.name());
             plugin.setConfiguration(config);
+        } else {
+        	
         }
         Xpp3Dom instructions = config.getChild("instructions"); //$NON-NLS-1$
         if (instructions == null) {
@@ -579,11 +583,14 @@ public class TransformationEditor extends EditorPart implements ISaveablePart2, 
         }
         String importPkgs = importPkg.getValue().trim();
         if (!importPkgs.contains("com.sun.el;version=")) { //$NON-NLS-1$
-            if (!importPkgs.isEmpty()) importPkgs += ",\n"; //$NON-NLS-1$
+            if (!importPkgs.isEmpty()){
+            	importPkgs += ",\n"; //$NON-NLS-1$
+            }
             importPkgs += "*,com.sun.el;version=\"[2,3)\";resolution:=optional"; //$NON-NLS-1$
             importPkg.setValue(importPkgs);
             try (OutputStream out = new BufferedOutputStream(new FileOutputStream(pomFile))) {
                 MavenPlugin.getMaven().writeModel(pomModel, out);
+                project.getFile("pom.xml").refreshLocal(IResource.DEPTH_ZERO, monitor);
             }
         }
     }
