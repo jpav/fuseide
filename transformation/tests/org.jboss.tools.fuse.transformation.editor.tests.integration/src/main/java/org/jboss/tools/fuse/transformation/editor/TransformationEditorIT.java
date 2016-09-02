@@ -12,7 +12,9 @@ package org.jboss.tools.fuse.transformation.editor;
 import static org.assertj.core.api.Assertions.assertThat;
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.text.StringCharacterIterator;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
@@ -40,7 +42,7 @@ public class TransformationEditorIT {
 			"  <build>\n" +
 			"    <plugins>\n";
 
-	private static final String POM_END = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+	private static final String POM_END = 
 			"    </plugins>\n" +
 			"  </build>\n" +
 			"</project>";
@@ -52,14 +54,17 @@ public class TransformationEditorIT {
 			"        <version>3.2.0</version>\n" +
 			"		 <extensions>true</extensions>\n" +
 			"        <configuration>\n" +
+			"          <excludeDependencies>false</excludeDependencies>" +
+			"		   <archive>\n" +
+			"            <manifestEntries>" +
+			"		 	   <Project-Group-Id>${project.groupId}</Project-Group-Id>\n" +
+			"		 	   <Project-Artifact-Id>${project.artifactId}</Project-Artifact-Id>\n" +
+			"		 	   <Project-Version>${project.version}</Project-Version>\n" +
+			"            </manifestEntries>" +
+			"		   </archive>\n" +
 			"          <instructions>\n" +
 			"		     <Import-Package>*,com.sun.el;version=\"[2,3)\";resolution:=optional</Import-Package>\n" +
 			"		   </instructions>\n" +
-			"		   <archive>\n" +
-			"		 	 <Project-Group-Id>${project.groupId}</Project-Group-Id>\n" +
-			"		 	 <Project-Artifact-Id>${project.artifactId}</Project-Artifact-Id>\n" +
-			"		 	 <Project-Version>${project.version}</Project-Version>\n" +
-			"		   </archive>\n" +
 			"        </configuration>\n" +
 			"      </plugin>\n" +
 			POM_END;
@@ -82,10 +87,13 @@ public class TransformationEditorIT {
 			"        <version>3.2.0</version>\n" +
 			"		 <extensions>true</extensions>\n" +
 			"        <configuration>\n" +
+			"          <excludeDependencies>false</excludeDependencies>" +
 			"		   <archive>\n" +
-			"		 	 <Project-Group-Id>${project.groupId}</Project-Group-Id>\n" +
-			"		 	 <Project-Artifact-Id>${project.artifactId}</Project-Artifact-Id>\n" +
-			"		 	 <Project-Version>${project.version}</Project-Version>\n" +
+			"            <manifestEntries>" +
+			"		 	   <Project-Group-Id>${project.groupId}</Project-Group-Id>\n" +
+			"		 	   <Project-Artifact-Id>${project.artifactId}</Project-Artifact-Id>\n" +
+			"		 	   <Project-Version>${project.version}</Project-Version>\n" +
+			"            </manifestEntries>" +
 			"		   </archive>\n" +
 			"        </configuration>\n" +
 			"      </plugin>\n" +
@@ -98,13 +106,16 @@ public class TransformationEditorIT {
 			"        <version>3.2.0</version>\n" +
 			"		 <extensions>true</extensions>\n" +
 			"        <configuration>\n" +
+			"          <excludeDependencies>false</excludeDependencies>" +
+			"		   <archive>\n" +
+			"            <manifestEntries>" +
+			"		 	   <Project-Group-Id>${project.groupId}</Project-Group-Id>\n" +
+			"		 	   <Project-Artifact-Id>${project.artifactId}</Project-Artifact-Id>\n" +
+			"		 	   <Project-Version>${project.version}</Project-Version>\n" +
+			"            </manifestEntries>" +
+			"		   </archive>\n" +
 			"          <instructions>\n" +
 			"		   </instructions>\n" +
-			"		   <archive>\n" +
-			"		 	 <Project-Group-Id>${project.groupId}</Project-Group-Id>\n" +
-			"		 	 <Project-Artifact-Id>${project.artifactId}</Project-Artifact-Id>\n" +
-			"		 	 <Project-Version>${project.version}</Project-Version>\n" +
-			"		   </archive>\n" +
 			"        </configuration>\n" +
 			"      </plugin>\n" +
 			POM_END;
@@ -171,12 +182,12 @@ public class TransformationEditorIT {
 		updatePom(pom, EXPECTED_POM);
 	}
 
-	private void updatePom(String pom,
-	                       String expectedPom) throws Exception {
-		pomIFile.create(new ByteArrayInputStream(pom.getBytes()), true, monitor);
-		editor.updateManifestPackageImports(project, pomFile);
-		char[] buf = new char[expectedPom.length()];
-		try (InputStreamReader reader = new InputStreamReader(pomIFile.getContents())) {
+	private void updatePom(String pom, String expectedPom) throws Exception {
+		pomIFile.create(new ByteArrayInputStream(pom.getBytes(StandardCharsets.UTF_8)), true, monitor);
+		editor.updateManifestPackageImports(project, pomFile, new NullProgressMonitor());
+		InputStream pomContentsToCheck = pomIFile.getContents();
+		char[] buf = new char[pomContentsToCheck.available()];
+		try (InputStreamReader reader = new InputStreamReader(pomContentsToCheck, StandardCharsets.UTF_8)) {
 			reader.read(buf);
 		}
 		assertThat(normalize(String.valueOf(buf))).isEqualTo(normalize(expectedPom));
@@ -186,7 +197,9 @@ public class TransformationEditorIT {
 		StringBuilder builder = new StringBuilder();
 		StringCharacterIterator iter = new StringCharacterIterator(text);
 		for (char chr = iter.first(); chr != StringCharacterIterator.DONE; chr = iter.next()) {
-			if (!Character.isWhitespace(chr)) builder.append(chr);
+			if (!Character.isWhitespace(chr)){
+				builder.append(chr);
+			}
 		}
 		return builder.toString();
 	}
