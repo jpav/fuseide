@@ -16,9 +16,15 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PrintWriter;
 import java.net.URLClassLoader;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
@@ -26,6 +32,7 @@ import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IResourceChangeEvent;
 import org.eclipse.core.resources.IResourceChangeListener;
 import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IConfigurationElement;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -49,6 +56,7 @@ import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.swt.widgets.ToolBar;
 import org.eclipse.swt.widgets.ToolItem;
@@ -65,6 +73,7 @@ import org.fusesource.ide.camel.editor.utils.CamelUtils;
 import org.fusesource.ide.camel.editor.utils.MavenUtils;
 import org.fusesource.ide.camel.model.service.core.model.AbstractCamelModelElement;
 import org.jboss.tools.fuse.transformation.core.MappingOperation;
+import org.jboss.tools.fuse.transformation.core.dozer.DozerMapperConfiguration;
 import org.jboss.tools.fuse.transformation.editor.internal.MappingDetailViewer;
 import org.jboss.tools.fuse.transformation.editor.internal.MappingsViewer;
 import org.jboss.tools.fuse.transformation.editor.internal.PotentialDropTarget;
@@ -349,8 +358,13 @@ public class TransformationEditor extends EditorPart implements ISaveablePart2, 
 
         IFile configFile = ((FileEditorInput)getEditorInput()).getFile();
         IJavaProject javaProject = JavaCore.create(configFile.getProject());
+        IProgressMonitor monitor = new NullProgressMonitor();
         try {
             loader = (URLClassLoader)JavaUtil.getProjectClassLoader(javaProject, getClass().getClassLoader());
+
+            // Update transformation file namespace URI if necessary
+            updateTransformationFile(site, configFile, monitor);
+
             manager = new TransformationManager(configFile, loader);
             // Add contributed transformations if missing or a different version
             String version = Activator.plugin().getBundle().getVersion().toString();
@@ -370,10 +384,6 @@ public class TransformationEditor extends EditorPart implements ISaveablePart2, 
 			mavenUtils.addResourceFolder(project, pomFile, Util.TRANSFORMATIONS_FOLDER);
 			mavenUtils.addResourceFolder(project, pomFile, MavenUtils.RESOURCES_PATH);
 
-			IProgressMonitor monitor = new NullProgressMonitor();
-			
-
-
             // Ensure Java project source classpath entry exists for main Java source & transformations folder
             Util.ensureSourceFolderExists(javaProject, Util.TRANSFORMATIONS_FOLDER, monitor);
             Util.ensureSourceFolderExists(javaProject, new MavenUtils().javaSourceFolder(), monitor);
@@ -384,6 +394,40 @@ public class TransformationEditor extends EditorPart implements ISaveablePart2, 
         } catch (final Exception e) {
             throw new PartInitException("Error initializing editor", e); //$NON-NLS-1$
         }
+    }
+
+    private void updateTransformationFile(IEditorSite site, IFile configFile, IProgressMonitor monitor) throws IOException, CoreException {
+        File tmpFile = File.createTempFile("dozer", ".xml");
+        tmpFile.deleteOnExit();
+        java.nio.file.Path xformPath = Paths.get(configFile.getLocationURI());
+        boolean changed = false;
+        try (Stream<String> reader = Files.lines(xformPath);
+                PrintWriter writer = new PrintWriter(tmpFile)) {
+            for (Iterator<String> iter = reader.iterator(); iter.hasNext();) {
+                String line = iter.next();
+                if (line.contains(DozerMapperConfiguration.PRE_DOZER_6_SCHEMA_LOC)) {
+                    line = line.replace(DozerMapperConfiguration.PRE_DOZER_6_SCHEMA_LOC, DozerMapperConfiguration.DOZER_6_SCHEMA_LOC);
+                    changed = true;
+                }
+                if (line.contains(DozerMapperConfiguration.PRE_DOZER_6_XMLNS)) {
+                    line = line.replace(DozerMapperConfiguration.PRE_DOZER_6_XMLNS, DozerMapperConfiguration.DOZER_6_XMLNS);
+                    changed = true;
+                }
+                writer.println(line);
+            }
+        }
+        if (changed) {
+            if (!migrationConfirmed(site.getShell())) {
+                Display.getDefault().asyncExec(() -> site.getWorkbenchWindow().getActivePage().closeEditor(this, false));
+                throw new PartInitException(Messages.TransformationEditor_unableToOpenIncompatibleTransformationFile);
+            }
+            Files.move(tmpFile.toPath(), xformPath, StandardCopyOption.REPLACE_EXISTING);
+            configFile.refreshLocal(IResource.DEPTH_INFINITE, monitor);
+        }
+    }
+
+    protected boolean migrationConfirmed(Shell shell) {
+        return MessageDialog.openConfirm(shell, Messages.TransformationEditor_ConfirmDialogTtile, Messages.TransformationEditor_migrationDialogConfirmation);
     }
 
 	private void waitJavaBuild(int decreasingCounter, InterruptedException interruptedException, IProgressMonitor monitor) {
