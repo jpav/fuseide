@@ -80,6 +80,7 @@ import org.jboss.tools.fuse.transformation.editor.internal.PotentialDropTarget;
 import org.jboss.tools.fuse.transformation.editor.internal.SourceTabFolder;
 import org.jboss.tools.fuse.transformation.editor.internal.TargetTabFolder;
 import org.jboss.tools.fuse.transformation.editor.internal.l10n.Messages;
+import org.jboss.tools.fuse.transformation.editor.internal.util.DozerMigrator;
 import org.jboss.tools.fuse.transformation.editor.internal.util.JavaUtil;
 import org.jboss.tools.fuse.transformation.editor.internal.util.TransformationManager;
 import org.jboss.tools.fuse.transformation.editor.internal.util.Util;
@@ -362,8 +363,7 @@ public class TransformationEditor extends EditorPart implements ISaveablePart2, 
         try {
             loader = (URLClassLoader)JavaUtil.getProjectClassLoader(javaProject, getClass().getClassLoader());
 
-            // Update transformation file namespace URI if necessary
-            updateTransformationFile(site, configFile, monitor);
+            new DozerMigrator().migrateIfNecessary(site, this, configFile, monitor);
 
             manager = new TransformationManager(configFile, loader);
             // Add contributed transformations if missing or a different version
@@ -394,40 +394,6 @@ public class TransformationEditor extends EditorPart implements ISaveablePart2, 
         } catch (final Exception e) {
             throw new PartInitException("Error initializing editor", e); //$NON-NLS-1$
         }
-    }
-
-    private void updateTransformationFile(IEditorSite site, IFile configFile, IProgressMonitor monitor) throws IOException, CoreException {
-        File tmpFile = File.createTempFile("dozer", ".xml");
-        tmpFile.deleteOnExit();
-        java.nio.file.Path xformPath = Paths.get(configFile.getLocationURI());
-        boolean changed = false;
-        try (Stream<String> reader = Files.lines(xformPath);
-                PrintWriter writer = new PrintWriter(tmpFile)) {
-            for (Iterator<String> iter = reader.iterator(); iter.hasNext();) {
-                String line = iter.next();
-                if (line.contains(DozerMapperConfiguration.PRE_DOZER_6_SCHEMA_LOC)) {
-                    line = line.replace(DozerMapperConfiguration.PRE_DOZER_6_SCHEMA_LOC, DozerMapperConfiguration.DOZER_6_SCHEMA_LOC);
-                    changed = true;
-                }
-                if (line.contains(DozerMapperConfiguration.PRE_DOZER_6_XMLNS)) {
-                    line = line.replace(DozerMapperConfiguration.PRE_DOZER_6_XMLNS, DozerMapperConfiguration.DOZER_6_XMLNS);
-                    changed = true;
-                }
-                writer.println(line);
-            }
-        }
-        if (changed) {
-            if (!migrationConfirmed(site.getShell())) {
-                Display.getDefault().asyncExec(() -> site.getWorkbenchWindow().getActivePage().closeEditor(this, false));
-                throw new PartInitException(Messages.TransformationEditor_unableToOpenIncompatibleTransformationFile);
-            }
-            Files.move(tmpFile.toPath(), xformPath, StandardCopyOption.REPLACE_EXISTING);
-            configFile.refreshLocal(IResource.DEPTH_INFINITE, monitor);
-        }
-    }
-
-    protected boolean migrationConfirmed(Shell shell) {
-        return MessageDialog.openConfirm(shell, Messages.TransformationEditor_ConfirmDialogTtile, Messages.TransformationEditor_migrationDialogConfirmation);
     }
 
 	private void waitJavaBuild(int decreasingCounter, InterruptedException interruptedException, IProgressMonitor monitor) {
